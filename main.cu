@@ -3,60 +3,70 @@
 #include <stdio.h>
 #include <time.h>
 
-__global__
-void function (int n, float *x, float *y) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if (i < n) *(y + i) = *(x + i) + *(y + i);
+#include <GL/gl.h>
+#include <GL/glut.h>
+
+#define WIDTH 1000
+#define HEIGHT 1000
+#define FOV 45
+#define Z_NEAR 1.0f
+#define Z_FAR 500.0f
+
+#define KEY_ESC 27
+
+void display () {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glLoadIdentity();
+    glTranslatef(0.0f, 0.0f, -3.0f);
+
+    glBegin(GL_TRIANGLES);
+    glColor3f(0.0f,0.0f,1.0f);
+    glVertex3f( 0.0f, 1.0f, 0.0f);
+    glColor3f(0.0f,1.0f,0.0f);
+    glVertex3f(-1.0f,-1.0f, 0.0f);
+    glColor3f(1.0f,0.0f,0.0f);
+    glVertex3f( 1.0f,-1.0f, 0.0f);
+    
+    glEnd();
+
+    glutSwapBuffers();
+}
+
+
+
+void initialize () {
+    glMatrixMode(GL_PROJECTION);
+    glViewport(0, 0, WIDTH, HEIGHT);
+    glLoadIdentity();
+    glOrtho(0, 1.0f, 0, 1.0f, -1.0f, 1.0f);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void keyboard (unsigned char key, int mousePositionX, int mousePositionY) {
+    switch (key) {
+        case KEY_ESC:
+            exit(0);
+            break;
+        default:
+            break;
+    }
 }
 
 int main (int argc, char *argv[]) {
 
-    // Create arrays
-
-    int N = 1000000;
-    float *x, *y, *d_x, *d_y;
-
-    x = (float *) malloc(N * sizeof(float));
-    y = (float *) malloc(N * sizeof(float));
-
-    cudaMalloc(&d_x, N * sizeof(float));
-    cudaMalloc(&d_y, N * sizeof(float));
-
-    // Initialize host arrays
-
-    for (int i = 0; i < N; i++) {
-        *(x + i) = (float) i;
-        *(y + i) = (float) i;
-    }
-
-    // Move data to GPU
-
-    cudaMemcpy(d_x, x, N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_y, y, N * sizeof(float), cudaMemcpyHostToDevice);
-
-    // Launch function
-
-    int BLOCK_SIZE = 250;
-    int BLOCKS = N / BLOCK_SIZE;
-
-    function <<< BLOCKS, BLOCK_SIZE >>> (N, d_x, d_y);
-
-    // Move result to host
-
-    cudaMemcpy(y, d_y, N*sizeof(float), cudaMemcpyDeviceToHost);
-
-    // Print first 1000 results
-
-    for (int i = 0; i < 1000; i++) {
-        printf("%f\n", *(y + i));
-    }
-
-    // Clean-up
-
-    cudaFree(d_x);
-    cudaFree(d_y);
-    free(x);
-    free(y);
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH);
+    glutInitWindowSize(WIDTH, HEIGHT);
+    glutCreateWindow("CUDA Simulation");
+    glutDisplayFunc(display);
+    glutIdleFunc(display);
+    glutKeyboardFunc(keyboard);
+    initialize();
+    glutMainLoop();
 
     return 0;
 }
