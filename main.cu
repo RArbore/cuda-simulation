@@ -4,20 +4,28 @@
 #include <math.h>
 #include <time.h>
 
+#include <GL/gl.h>
+#include <GL/glut.h>
+
+#include <cuda_runtime_api.h>
+#include <cuda_gl_interop.h>
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define WIDTH 1000
-#define HEIGHT 1000
-#define NUM_AGENTS 10000
+#define WIDTH 300
+#define HEIGHT 300
+#define NUM_AGENTS 500
 #define AGENTS_ARRAY_SIZE NUM_AGENTS * 3
 #define PIXELS WIDTH * HEIGHT
-#define TOTAL_STEPS 1000000
+#define TOTAL_STEPS 100000
 #define KERNEL_R 1
-#define DECAY 0.97
-#define SAMPLE_DIST 2
-#define SAMPLE_ANGLE M_PI / 6.0f
-#define TURN_SPEED 0.1
+#define DECAY 0.92
+#define TRAVEL_SPEED 3
+#define SAMPLE_DIST 4.0f
+#define SAMPLE_ANGLE M_PI / 12.0f
+#define TURN_SPEED 1.2
+#define KEY_ESC 27
 
 __global__
 void update_agents (float *agents, uint8_t *image) {
@@ -26,10 +34,37 @@ void update_agents (float *agents, uint8_t *image) {
         float x = agents[3 * i];
         float y = agents[3 * i + 1];
         float angle = agents[3 * i + 2];
-
-        float sense_left = image[((int) (x + SAMPLE_DIST * cos(angle + SAMPLE_ANGLE))) + ((int) (y + SAMPLE_DIST * sin(angle + SAMPLE_ANGLE))) * WIDTH];
-        float sense_center = image[((int) (x + SAMPLE_DIST * cos(angle))) + ((int) (y + SAMPLE_DIST * sin(angle))) * WIDTH];
-        float sense_right = image[((int) (x + SAMPLE_DIST * cos(angle - SAMPLE_ANGLE))) + ((int) (y + SAMPLE_DIST * sin(angle - SAMPLE_ANGLE))) * WIDTH];
+        float sense_left = 0.0f;
+        float sense_center = 0.0f;
+        float sense_right = 0.0f;
+        float sample_x_left = x + SAMPLE_DIST * cos(angle + SAMPLE_ANGLE);
+        float sample_y_left = y + SAMPLE_DIST * sin(angle + SAMPLE_ANGLE);
+        float sample_x_center = x + SAMPLE_DIST * cos(angle);
+        float sample_y_center = y + SAMPLE_DIST * sin(angle);
+        float sample_x_right = x + SAMPLE_DIST * cos(angle - SAMPLE_ANGLE);
+        float sample_y_right = y + SAMPLE_DIST * sin(angle - SAMPLE_ANGLE);
+        
+        for (float sx = sample_x_left - KERNEL_R; sx <= sample_x_left + KERNEL_R; sx++) {
+            for (float sy = sample_y_left - KERNEL_R; sy <= sample_y_left + KERNEL_R; sy++) {
+                if (sx >= 0  && sy >= 0 && sx < WIDTH && sy < HEIGHT) {
+                    sense_left += (float) image[((int) (sx)) + ((int) (sy)) * WIDTH];
+                }
+            }
+        }
+        for (float sx = sample_x_center - KERNEL_R; sx <= sample_x_center + KERNEL_R; sx++) {
+            for (float sy = sample_y_center - KERNEL_R; sy <= sample_y_center + KERNEL_R; sy++) {
+                if (sx >= 0  && sy >= 0 && sx < WIDTH && sy < HEIGHT) {
+                    sense_center += (float) image[((int) (sx)) + ((int) (sy)) * WIDTH];
+                }
+            }
+        }
+        for (float sx = sample_x_right - KERNEL_R; sx <= sample_x_right + KERNEL_R; sx++) {
+            for (float sy = sample_y_right - KERNEL_R; sy <= sample_y_right + KERNEL_R; sy++) {
+                if (sx >= 0  && sy >= 0 && sx < WIDTH && sy < HEIGHT) {
+                    sense_right += (float) image[((int) (sx)) + ((int) (sy)) * WIDTH];
+                }
+            }
+        }
 
         uint state = (uint) (x * y * angle + sense_left + sense_center + sense_right);
         state ^= 2747636419u;
@@ -41,37 +76,69 @@ void update_agents (float *agents, uint8_t *image) {
 
         float turn_stren = ((float) (state % 1000)) / 1000.0f;
 
-        if (sense_center < sense_left && sense_center < sense_right) {
+        if (sense_center > sense_left && sense_center > sense_right) {
+
+        }
+        else if (sense_center < sense_left && sense_center < sense_right) {
             angle += 2.0f * (turn_stren - 0.5f) * TURN_SPEED;
         }
         else if (sense_left > sense_right) {
             angle += turn_stren * TURN_SPEED;
         }
-        else {
+        else if (sense_right > sense_left) {
             angle -= turn_stren * TURN_SPEED;
         }
 
         float vx = cos(angle);
         float vy = sin(angle);
 
-        x += vx;
-        y += vy;
+        for (int iter = 0; iter < TRAVEL_SPEED; iter++) {
+            x += vx;
+            y += vy;
+
+            if (x < 0) {
+                x = 0;
+                angle = turn_stren * 2 * M_PI;
+                float vx = cos(angle);
+                float vy = sin(angle);
+            }
+            if (y < 0) {
+                y = 0;
+                angle = turn_stren * 2 * M_PI;
+                float vx = cos(angle);
+                float vy = sin(angle);
+            }
+            if (x >= WIDTH) {
+                x = WIDTH - 1;
+                angle = turn_stren * 2 * M_PI;
+                float vx = cos(angle);
+                float vy = sin(angle);
+            }
+            if (y >= HEIGHT) {
+                y = HEIGHT - 1;
+                angle = turn_stren * 2 * M_PI;
+                float vx = cos(angle);
+                float vy = sin(angle);
+            }
+
+            image[((int) x) + ((int) y) * WIDTH] = 255;
+        }
 
         if (x < 0) {
             x = 0;
-            angle = M_PI - angle;
+            angle = turn_stren * 2 * M_PI;
         }
         if (y < 0) {
             y = 0;
-            angle *= -1;
+            angle = turn_stren * 2 * M_PI;
         }
         if (x >= WIDTH) {
             x = WIDTH - 1;
-            angle = M_PI - angle;
+            angle = turn_stren * 2 * M_PI;
         }
         if (y >= HEIGHT) {
             y = HEIGHT - 1;
-            angle *= -1;
+            angle = turn_stren * 2 * M_PI;
         }
 
         agents[3 * i] = x;
@@ -146,14 +213,12 @@ int main (int argc, char *argv[]) {
         update_image<<<PIXELS/100, 100>>>(agents, image);
         update_agents<<<NUM_AGENTS/100, 100>>>(agents, image);
 
-        cudaMemcpy(host_image, image, PIXELS * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-        stbi_write_png("output.png", WIDTH, HEIGHT, 1, host_image, WIDTH * 1);
-
         if (i % 1000 == 0) printf("%d\n", i);
     }
 
     //cudaMemcpy(host_agents, agents, AGENTS_ARRAY_SIZE * sizeof(float), cudaMemcpyDeviceToHost);
-
+    cudaMemcpy(host_image, image, PIXELS * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    stbi_write_png("output.png", WIDTH, HEIGHT, 1, host_image, WIDTH * 1);
 
     return 0;
 }
