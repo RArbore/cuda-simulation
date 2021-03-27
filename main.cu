@@ -27,7 +27,6 @@ void initialize () {
 
     GLuint texture;
     glGenTextures(1, &texture);
-    printf("%d\n", texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -43,6 +42,14 @@ void initialize () {
 void display () {
     glClear(GL_COLOR_BUFFER_BIT);
     glBindTexture(GL_TEXTURE_2D, 1);
+
+    unsigned char tex_data[64*3];
+    for (int i = 0; i < 64*3; ++i) {
+        tex_data[i] = (i + count) % 256;
+    }
+
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 8, 8, GL_RGB, GL_UNSIGNED_BYTE, tex_data);
+
     glEnable(GL_TEXTURE_2D);
     glBegin(GL_QUADS);
 
