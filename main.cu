@@ -13,19 +13,28 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define WIDTH 300
-#define HEIGHT 300
-#define NUM_AGENTS 500
+#define WIDTH 1920
+#define HEIGHT 1080
+#define NUM_AGENTS 50000
 #define AGENTS_ARRAY_SIZE NUM_AGENTS * 3
 #define PIXELS WIDTH * HEIGHT
 #define TOTAL_STEPS 100000
 #define KERNEL_R 1
-#define DECAY 0.92
-#define TRAVEL_SPEED 3
-#define SAMPLE_DIST 4.0f
-#define SAMPLE_ANGLE M_PI / 12.0f
-#define TURN_SPEED 1.2
+#define DECAY 0.98f
+#define TRAVEL_SPEED 2
+#define SAMPLE_DIST 5.0f
+#define SAMPLE_ANGLE M_PI / 8.0f
+#define TURN_SPEED 0.4f
+#define RANDOM_STREN 0.0f
 #define KEY_ESC 27
+
+float *host_agents;
+uint8_t *host_image;
+float *agents;
+uint8_t *image;
+
+GLuint tex;
+cudaGraphicsResource_t cuda_resource;
 
 __global__
 void update_agents (float *agents, uint8_t *image) {
@@ -80,13 +89,13 @@ void update_agents (float *agents, uint8_t *image) {
 
         }
         else if (sense_center < sense_left && sense_center < sense_right) {
-            angle += 2.0f * (turn_stren - 0.5f) * TURN_SPEED;
+            angle += 2.0f * (turn_stren - 0.5f) * TURN_SPEED * RANDOM_STREN;
         }
         else if (sense_left > sense_right) {
-            angle += turn_stren * TURN_SPEED;
+            angle += pow(turn_stren, RANDOM_STREN) * TURN_SPEED;
         }
         else if (sense_right > sense_left) {
-            angle -= turn_stren * TURN_SPEED;
+            angle -= pow(turn_stren, RANDOM_STREN) * TURN_SPEED;
         }
 
         float vx = cos(angle);
@@ -157,7 +166,7 @@ void update_image (float *agents, uint8_t *image) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < PIXELS) {
         int x = i % WIDTH;
-        int y = i / HEIGHT;
+        int y = i / WIDTH;
         float total = 0;
         int count = 0;
         int left = x - KERNEL_R;
@@ -178,17 +187,82 @@ void update_image (float *agents, uint8_t *image) {
     }
 }
 
+__global__
+void update_surface(cudaSurfaceObject_t cuda_surface, uint8_t *image) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < PIXELS) {
+        int x = i % WIDTH;
+        int y = i / WIDTH;
+        surf2Dwrite<uint8_t>(image[i], cuda_surface, x, y);
+    }
+}
+
+void invokeRenderingKernel(cudaSurfaceObject_t cuda_surface) {
+    update_image<<<PIXELS/10, 10>>>(agents, image);
+    update_agents<<<NUM_AGENTS/10, 10>>>(agents, image);
+    update_surface<<<PIXELS/10, 10>>>(cuda_surface, image);
+}
+
+void initializeGL () {
+    glEnable(GL_TEXTURE_2D);
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, WIDTH, HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    cudaGraphicsGLRegisterImage(&cuda_resource, tex, GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard);
+}
+
+void displayGL() {
+    cudaGraphicsMapResources(1, &cuda_resource);
+    cudaArray_t cuda_array;
+    cudaGraphicsSubResourceGetMappedArray(&cuda_array, cuda_resource, 0, 0);
+    cudaResourceDesc cuda_array_resource_desc;
+    cuda_array_resource_desc.resType = cudaResourceTypeArray;
+    cuda_array_resource_desc.res.array.array = cuda_array;
+    cudaSurfaceObject_t cuda_surface;
+    cudaCreateSurfaceObject(&cuda_surface, &cuda_array_resource_desc);
+    invokeRenderingKernel(cuda_surface);
+    cudaDestroySurfaceObject(cuda_surface);
+    cudaGraphicsUnmapResources(1, &cuda_resource);
+    cudaStreamSynchronize(0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex2f(-1.0f, -1.0f);
+    glTexCoord2f(1.0f, 0.0f); glVertex2f(+1.0f, -1.0f);
+    glTexCoord2f(1.0f, 1.0f); glVertex2f(+1.0f, +1.0f);
+    glTexCoord2f(0.0f, 1.0f); glVertex2f(-1.0f, +1.0f);
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glutSwapBuffers();
+}
+
+void keyboardGL (unsigned char key, int mousePositionX, int mousePositionY) {
+    switch (key) {
+        case KEY_ESC:
+            exit(0);
+            break;
+        default:
+            break;
+    }
+}
+
 int main (int argc, char *argv[]) {
 
-    int i;
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
+    glutInitWindowSize(WIDTH, HEIGHT);
+    glutCreateWindow("CUDA Simulation");
+    glutDisplayFunc(displayGL);
+    glutIdleFunc(displayGL);
+    glutKeyboardFunc(keyboardGL);
+    initializeGL();
 
-    float *host_agents;
-    uint8_t *host_image;
+    int i;
+    
     host_agents = (float *) malloc(AGENTS_ARRAY_SIZE * sizeof(float));
     host_image = (uint8_t *) malloc(PIXELS * sizeof(uint8_t));
-
-    float *agents;
-    uint8_t *image;
 
     cudaMalloc(&agents, AGENTS_ARRAY_SIZE * sizeof(float));
     cudaMalloc(&image, PIXELS * sizeof(uint8_t));
@@ -209,6 +283,8 @@ int main (int argc, char *argv[]) {
     cudaMemcpy(agents, host_agents, AGENTS_ARRAY_SIZE * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(image, host_image, PIXELS * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
+    glutMainLoop(); 
+    
     for (i = 0; i < TOTAL_STEPS; i++) {
         update_image<<<PIXELS/100, 100>>>(agents, image);
         update_agents<<<NUM_AGENTS/100, 100>>>(agents, image);
