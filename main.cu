@@ -24,12 +24,12 @@
 #define PIXEL_DIV 256
 #define TOTAL_STEPS 100000
 #define KERNEL_R 1
-#define DECAY 0.2f
+#define DECAY 0.01f
 #define TRAVEL_SPEED 1
 #define SAMPLE_DIST 4.0f
 #define SAMPLE_ANGLE M_PI / 8.0f
 #define TURN_SPEED 1.0f
-#define RANDOM_STREN 1.5f
+#define RANDOM_STREN 0.5f
 #define KEY_ESC 27
 
 float *host_agents;
