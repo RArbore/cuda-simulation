@@ -13,23 +13,23 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define WIDTH 3840
-#define HEIGHT 2160
-#define NUM_AGENTS 100000
+#define WIDTH 1920
+#define HEIGHT 1080
+#define NUM_AGENTS 10000000
 #define AGENTS_ARRAY_SIZE NUM_AGENTS * 3
 #define PIXELS WIDTH * HEIGHT
 #define BYTES_PER_PIXEL 4
 #define PIXELS_SIZE PIXELS * BYTES_PER_PIXEL
-#define AGENTS_DIV 100
+#define AGENTS_DIV 10
 #define PIXEL_DIV 256
 #define TOTAL_STEPS 100000
 #define KERNEL_R 1
-#define DECAY 0.01f
+#define DECAY 0.99f
 #define TRAVEL_SPEED 1
 #define SAMPLE_DIST 4.0f
-#define SAMPLE_ANGLE M_PI / 8.0f
-#define TURN_SPEED 1.0f
-#define RANDOM_STREN 0.5f
+#define SAMPLE_ANGLE M_PI / 12.0f
+#define TURN_SPEED 0.1f
+#define RANDOM_STREN 0.4f
 #define KEY_ESC 27
 
 float *host_agents;
@@ -115,21 +115,26 @@ void update_agents (float *agents, uint8_t *image) {
             angle -= pow(turn_stren, RANDOM_STREN) * TURN_SPEED;
         }
 
-        float center_angle = atan((y - HEIGHT / 2) / (x - WIDTH / 2));
-        if (x >= WIDTH / 2) {
+        float center_angle = atan((y - 539) / (x - 959));
+        if (x >= 960) {
             center_angle -= M_PI;
         }
 
-        center_angle += M_PI;
+        float center_dist_2 = (y - 539) * (y - 539) + (x - 959) * (x - 959);
+
+        center_angle += M_PI/2 + 0.01f;
 
         float vx = cos(angle);
         float vy = sin(angle);
 
-        float vx_c = cos(center_angle);
-        float vy_c = sin(center_angle);
+        float vx_c = cos(center_angle + M_PI / 2) * 0.1f;
+        float vy_c = sin(center_angle + M_PI / 2) * 0.1f;
 
-        //vx = vx + vx_c;
-        //vy = vy + vy_c;
+        //float mult = (-cos(4.0f * angle) + 1.2f) / 2.0f;
+        float mult = (cos(-center_angle + angle) + 4.0f) / (center_dist_2 / 200000.0f + 4.0f);
+
+        vx = vx * mult;
+        vy = vy * mult;
 
         for (int iter = 0; iter < TRAVEL_SPEED; iter++) {
             x += vx;
@@ -147,8 +152,8 @@ void update_agents (float *agents, uint8_t *image) {
         agents[3 * i + 1] = y;
         agents[3 * i + 2] = angle;
 
-        image[BYTES_PER_PIXEL * (((int) x) + ((int) y) * WIDTH)] = 255;
-        image[BYTES_PER_PIXEL * (((int) x) + ((int) y) * WIDTH) + 1] = 255;
+        image[BYTES_PER_PIXEL * (((int) x) + ((int) y) * WIDTH)] = 127;
+        image[BYTES_PER_PIXEL * (((int) x) + ((int) y) * WIDTH) + 1] = 0;
         image[BYTES_PER_PIXEL * (((int) x) + ((int) y) * WIDTH) + 2] = 255;
     }
 }
@@ -178,16 +183,9 @@ void update_image (float *agents, uint8_t *image) {
                 count++;
             }
         }
-        if (total >= DECAY) {
-            image[BYTES_PER_PIXEL * i] = (int) (total - DECAY);
-            image[BYTES_PER_PIXEL * i + 1] = (int) (total - DECAY);
-            image[BYTES_PER_PIXEL * i + 2] = (int) (total - DECAY);
-        }
-        else {
-            image[BYTES_PER_PIXEL * i] = 0;
-            image[BYTES_PER_PIXEL * i + 1] = 0;
-            image[BYTES_PER_PIXEL * i + 2] = 0;
-        }
+        image[BYTES_PER_PIXEL * i] = (int) (total * DECAY);
+        image[BYTES_PER_PIXEL * i + 1] = (int) (total * DECAY) * 0;
+        image[BYTES_PER_PIXEL * i + 2] = (int) (total * DECAY) * 1.5;
     }
 }
 
@@ -230,7 +228,7 @@ void displayGL() {
     invokeRenderingKernel(cuda_surface);
     cudaDestroySurfaceObject(cuda_surface);
     cudaGraphicsUnmapResources(1, &cuda_resource);
-    cudaStreamSynchronize(0);
+
     glBindTexture(GL_TEXTURE_2D, tex);
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 0.0f); glVertex2f(-1.0f, -1.0f);
@@ -254,6 +252,8 @@ void keyboardGL (unsigned char key, int mousePositionX, int mousePositionY) {
 
 int main (int argc, char *argv[]) {
 
+    srand(time(0));
+
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
     glutInitWindowSize(WIDTH, HEIGHT);
@@ -276,6 +276,9 @@ int main (int argc, char *argv[]) {
 
         host_agents[3 * i] = (float) (rand() % WIDTH);
         host_agents[3 * i + 1] = (float) (rand() % HEIGHT);
+
+        host_agents[3 * i] = (float) (WIDTH / 2);
+        host_agents[3 * i + 1] = (float) (HEIGHT / 2);
 
         angle = (float) (rand() % 360);
         angle *= M_PI/180.0f;
