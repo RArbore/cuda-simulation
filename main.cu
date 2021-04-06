@@ -15,7 +15,7 @@
 
 #define WIDTH 1920
 #define HEIGHT 1080
-#define NUM_AGENTS 10000000
+#define NUM_AGENTS 100000
 #define AGENTS_ARRAY_SIZE NUM_AGENTS * 3
 #define PIXELS WIDTH * HEIGHT
 #define BYTES_PER_PIXEL 4
@@ -28,8 +28,8 @@
 #define TRAVEL_SPEED 1
 #define SAMPLE_DIST 4.0f
 #define SAMPLE_ANGLE M_PI / 12.0f
-#define TURN_SPEED 0.1f
-#define RANDOM_STREN 0.4f
+#define TURN_SPEED 0.3f
+#define RANDOM_STREN 0.05f
 #define KEY_ESC 27
 
 float *host_agents;
@@ -115,23 +115,24 @@ void update_agents (float *agents, uint8_t *image) {
             angle -= pow(turn_stren, RANDOM_STREN) * TURN_SPEED;
         }
 
-        float center_angle = atan((y - 539) / (x - 959));
-        if (x >= 960) {
-            center_angle -= M_PI;
-        }
+        //float center_angle = atan((y - 539) / (x - 959));
+        //if (x >= 960) {
+        //    center_angle -= M_PI;
+        //}
 
-        float center_dist_2 = (y - 539) * (y - 539) + (x - 959) * (x - 959);
+        //float center_dist_2 = (y - 539) * (y - 539) + (x - 959) * (x - 959);
 
-        center_angle += M_PI/2 + 0.01f;
+        //center_angle += M_PI/2 + 0.01f;
 
         float vx = cos(angle);
         float vy = sin(angle);
 
-        float vx_c = cos(center_angle + M_PI / 2) * 0.1f;
-        float vy_c = sin(center_angle + M_PI / 2) * 0.1f;
+        //float vx_c = cos(center_angle + M_PI / 2) * 0.1f;
+        //float vy_c = sin(center_angle + M_PI / 2) * 0.1f;
 
         //float mult = (-cos(4.0f * angle) + 1.2f) / 2.0f;
-        float mult = (cos(-center_angle + angle) + 4.0f) / (center_dist_2 / 200000.0f + 4.0f);
+        //float mult = (cos(-center_angle + angle) + 4.0f) / (center_dist_2 / 200000.0f + 4.0f);
+        float mult = 1.0f;
 
         vx = vx * mult;
         vy = vy * mult;
